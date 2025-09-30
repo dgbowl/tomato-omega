@@ -4,7 +4,7 @@
 This driver is using the serial port interface, based on the commands in the [`API documentation`](https://br.omega.com/omegaFiles/software/PX409-USBH_r.html). This driver is developed by the [ConCat lab at TU Berlin](https://tu.berlin/en/concat).
 
 ## Installation
-Install the package using `pip`, e.g. `pip install tomato-omega`.
+Install the package using `pip`, e.g. `pip install tomato-omega`. No further driver-specific steps are necessary.
 
 ## Supported functions
 

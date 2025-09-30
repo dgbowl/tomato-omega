@@ -2,7 +2,6 @@ from tomato_omega import DriverInterface, Device
 import time
 
 if __name__ == "__main__":
-
     kwargs = dict(address="/dev/ttyUSB0", channel="0")
     device = Device(driver="omega", key=(kwargs["address"], kwargs["channel"]))
     print(f"{device=}")
@@ -19,4 +18,3 @@ if __name__ == "__main__":
     print(f"{interface.cmp_constants(**kwargs)=}")
     time.sleep(1)
     print(f"{interface.cmp_last_data(**kwargs)=}")
-

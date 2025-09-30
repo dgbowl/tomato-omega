@@ -1,5 +1,4 @@
 from typing import Any
-from threading import RLock
 from tomato.driverinterface_2_1 import ModelInterface, ModelDevice, Attr
 from tomato.driverinterface_2_1.decorators import coerce_val
 from tomato.driverinterface_2_1.types import Val
@@ -34,15 +33,9 @@ class DriverInterface(ModelInterface):
 
 class Device(ModelDevice):
     s: serial.Serial
-
-    portlock: RLock
-
     last_action: float
-
     constants: dict
-
     units: str
-
 
     @property
     @read_delay
@@ -53,7 +46,6 @@ class Device(ModelDevice):
         return pint.Quantity(f"{val} {unit}")
 
     def __init__(self, driver: ModelInterface, key: tuple[str, str], **kwargs: dict):
-
         address, _ = key
         self.s = serial.Serial(
             port=address,
@@ -76,7 +68,6 @@ class Device(ModelDevice):
         minv, to, maxv, unit, ag = ret[2].split()
         self.units = unit
         self.constants["gauge"] = True if ag == "G" else False
-
 
     def attrs(self, **kwargs: dict) -> dict[str, Attr]:
         attrs_dict = {
