@@ -11,7 +11,7 @@ import time
 import xarray as xr
 
 
-READ_DELAY = 0.01
+READ_DELAY = 0.1
 SERIAL_TIMEOUT = 0.2
 READ_TIMEOUT = 1.0
 logger = logging.getLogger()
@@ -43,6 +43,7 @@ class Device(ModelDevice):
     @property
     @read_delay
     def pressure(self) -> pint.Quantity:
+        logger.debug("P\r\n")
         self.s.write(b"P\r\n")
         ret = self._read()
         val, unit, ag = ret[0].split()
