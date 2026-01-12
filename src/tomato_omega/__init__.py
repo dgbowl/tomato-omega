@@ -1,6 +1,5 @@
 from datetime import datetime
 from functools import wraps
-from threading import RLock
 from tomato.driverinterface_2_1 import ModelInterface, ModelDevice, Attr
 from tomato.driverinterface_2_1.decorators import coerce_val
 from tomato.driverinterface_2_1.types import Val
@@ -37,7 +36,6 @@ class DriverInterface(ModelInterface):
 
 class Device(ModelDevice):
     s: serial.Serial
-    portlock: RLock
     last_action: float
     constants: dict
     units: str
@@ -48,6 +46,7 @@ class Device(ModelDevice):
         self.s.write(b"P\r\n")
         ret = self._read()
         val, unit, ag = ret[0].split()
+        self.last_action = time.perf_counter()
         return pint.Quantity(f"{val} {unit}")
 
     def __init__(self, driver: ModelInterface, key: tuple[str, str], **kwargs: dict):
@@ -61,7 +60,6 @@ class Device(ModelDevice):
         )
         super().__init__(driver, key, **kwargs)
 
-        self.portlock = RLock()
         self.last_action = time.perf_counter()
         self.constants = dict()
 
@@ -77,7 +75,7 @@ class Device(ModelDevice):
 
     def attrs(self, **kwargs: dict) -> dict[str, Attr]:
         attrs_dict = {
-            "pressure": Attr(type=pint.Quantity, units=self.units, status=True),
+            "pressure": Attr(type=pint.Quantity, units=self.units, status=False),
         }
         return attrs_dict
 
@@ -106,16 +104,15 @@ class Device(ModelDevice):
         pass
 
     def _read(self) -> list[str]:
-        with self.portlock:
-            lines = []
-            t0 = time.perf_counter()
-            while time.perf_counter() - t0 < READ_TIMEOUT:
-                lines += self.s.readlines()
-                logger.debug(f"{lines=}")
-                if b">" in lines:
-                    break
-                time.sleep(READ_DELAY)
-            else:
-                raise RuntimeError(f"Read took too long: {lines}")
-            lines = [i.decode().strip() for i in lines[:-1]]
-            return lines
+        lines = []
+        t0 = time.perf_counter()
+        while time.perf_counter() - t0 < READ_TIMEOUT:
+            lines += self.s.readlines()
+            logger.debug(f"{lines=}")
+            if b">" in lines:
+                break
+            time.sleep(READ_DELAY)
+        else:
+            raise RuntimeError(f"Read took too long: {lines}")
+        lines = [i.decode().strip() for i in lines[:-1]]
+        return lines
