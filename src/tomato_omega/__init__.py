@@ -1,17 +1,20 @@
-from typing import Any
+from datetime import datetime
+from functools import wraps
 from tomato.driverinterface_2_1 import ModelInterface, ModelDevice, Attr
 from tomato.driverinterface_2_1.decorators import coerce_val
 from tomato.driverinterface_2_1.types import Val
-import serial
-from datetime import datetime
-import xarray as xr
+from typing import Any
+import logging
 import pint
+import serial
 import time
-from functools import wraps
+import xarray as xr
+
 
 READ_DELAY = 0.01
 SERIAL_TIMEOUT = 0.2
 READ_TIMEOUT = 1.0
+logger = logging.getLogger()
 
 
 def read_delay(func):
@@ -104,6 +107,7 @@ class Device(ModelDevice):
         t0 = time.perf_counter()
         while time.perf_counter() - t0 < READ_TIMEOUT:
             lines += self.s.readlines()
+            logger.debug(f"{lines=}")
             if b">" in lines:
                 break
             time.sleep(READ_DELAY)
