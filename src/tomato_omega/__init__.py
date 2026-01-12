@@ -11,7 +11,8 @@ import time
 import xarray as xr
 
 
-READ_DELAY = 0.1
+READ_RETRIES = 10
+READ_DELAY = 0.05
 SERIAL_TIMEOUT = 0.2
 READ_TIMEOUT = 1.0
 logger = logging.getLogger()
@@ -43,12 +44,20 @@ class Device(ModelDevice):
     @property
     @read_delay
     def pressure(self) -> pint.Quantity:
-        logger.debug("P\r\n")
-        self.s.write(b"P\r\n")
-        ret = self._read()
-        val, unit, ag = ret[0].split()
+        for retry in range(READ_RETRIES):
+            try:
+                logger.debug("P\r\n")
+                self.s.write(b"P\r\n")
+                ret = self._read()
+                val, unit, ag = ret[0].split()
+                qty = pint.Quantity(f"{val} {unit}")
+                break
+            except pint.UndefinedUnitError:
+                continue
+        else:
+            raise ValueError(f"Could not read pressure in {READ_RETRIES} attempts.")
         self.last_action = time.perf_counter()
-        return pint.Quantity(f"{val} {unit}")
+        return qty
 
     def __init__(self, driver: ModelInterface, key: tuple[str, str], **kwargs: dict):
         address, _ = key
