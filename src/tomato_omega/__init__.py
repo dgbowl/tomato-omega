@@ -45,7 +45,11 @@ class Device(ModelDevice):
     @property
     @read_delay
     def pressure(self) -> pint.Quantity:
-
+        ret = self._comm("P\r\n")
+        val, unit, ag = ret[0].split()
+        qty = pint.Quantity(f"{val} {unit}")
+        self.last_action = time.perf_counter()
+        return qty
 
         for retry in range(READ_RETRIES):
             try:
@@ -71,23 +75,21 @@ class Device(ModelDevice):
             bytesize=8,
             stopbits=1,
             timeout=SERIAL_TIMEOUT,
-            exclusive=True
+            exclusive=True,
         )
         super().__init__(driver, key, **kwargs)
 
         self.last_action = time.perf_counter()
         self.constants = dict()
+        self.portlock = RLock()
 
-        self.s.write(b"SNR\r\n")
-        ret = self._read()
+        ret = self._comm(b"SNR\r\n")
         self.constants["serial"] = ret[0].split("=")[1].strip()
 
-        self.s.write(b"ENQ\r\n")
-        ret = self._read()
+        ret = self._comm(b"ENQ\r\n")
         minv, to, maxv, unit, ag = ret[2].split()
         self.units = unit
         self.constants["gauge"] = True if ag == "G" else False
-        self.portlock = RLock()
 
     def attrs(self, **kwargs: dict) -> dict[str, Attr]:
         attrs_dict = {
@@ -119,16 +121,19 @@ class Device(ModelDevice):
     def set_attr(self, attr: str, val: Any, **kwargs: dict) -> Val:
         pass
 
-    def _read(self) -> list[str]:
+    def _comm(self, command: bytes) -> list[str]:
         lines = []
         t0 = time.perf_counter()
-        while time.perf_counter() - t0 < READ_TIMEOUT:
-            lines += self.s.readlines()
-            logger.debug(f"{lines=}")
-            if b">" in lines:
-                break
-            time.sleep(READ_DELAY)
-        else:
-            raise RuntimeError(f"Read took too long: {lines}")
+        with self.portlock:
+            logger.debug(f"{command.rstrip()}")
+            self.s.write(command)
+            while time.perf_counter() - t0 < READ_TIMEOUT:
+                lines += self.s.readlines()
+                logger.debug(f"{lines=}")
+                if b">" in lines:
+                    break
+                time.sleep(READ_DELAY)
+            else:
+                raise RuntimeError(f"Read took too long: {lines}")
         lines = [i.decode().strip() for i in lines[:-1]]
         return lines
