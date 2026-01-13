@@ -12,11 +12,10 @@ import time
 import xarray as xr
 
 
-READ_RETRIES = 10
-READ_DELAY = 0.05
+READ_DELAY = 0.02
 SERIAL_TIMEOUT = 0.2
-READ_TIMEOUT = 1.0
-logger = logging.getLogger()
+READ_TIMEOUT = 2.0
+logger = logging.getLogger(__name__)
 
 
 def read_delay(func):
@@ -48,22 +47,6 @@ class Device(ModelDevice):
         ret = self._comm(b"P\r\n")
         val, unit, ag = ret[0].split()
         qty = pint.Quantity(f"{val} {unit}")
-        self.last_action = time.perf_counter()
-        return qty
-
-        for retry in range(READ_RETRIES):
-            try:
-                with self.portlock:
-                    logger.debug("P\r\n")
-                    self.s.write(b"P\r\n")
-                    ret = self._read()
-                val, unit, ag = ret[0].split()
-                qty = pint.Quantity(f"{val} {unit}")
-                break
-            except pint.UndefinedUnitError:
-                continue
-        else:
-            raise ValueError(f"Could not read pressure in {READ_RETRIES} attempts.")
         self.last_action = time.perf_counter()
         return qty
 
@@ -125,11 +108,11 @@ class Device(ModelDevice):
         lines = []
         t0 = time.perf_counter()
         with self.portlock:
-            logger.debug(f"{command.rstrip()}")
+            logger.debug("%s", command.rstrip())
             self.s.write(command)
             while time.perf_counter() - t0 < READ_TIMEOUT:
                 lines += self.s.readlines()
-                logger.debug(f"{lines=}")
+                logger.debug("%s", lines)
                 if b">" in lines:
                     break
                 time.sleep(READ_DELAY)
