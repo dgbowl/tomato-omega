@@ -45,7 +45,7 @@ class Device(ModelDevice):
     @property
     @read_delay
     def pressure(self) -> pint.Quantity:
-        ret = self._comm("P\r\n")
+        ret = self._comm(b"P\r\n")
         val, unit, ag = ret[0].split()
         qty = pint.Quantity(f"{val} {unit}")
         self.last_action = time.perf_counter()
