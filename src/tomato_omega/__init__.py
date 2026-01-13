@@ -1,17 +1,21 @@
-from typing import Any
+from datetime import datetime
+from functools import wraps
+from threading import RLock
 from tomato.driverinterface_2_1 import ModelInterface, ModelDevice, Attr
 from tomato.driverinterface_2_1.decorators import coerce_val
 from tomato.driverinterface_2_1.types import Val
-import serial
-from datetime import datetime
-import xarray as xr
+from typing import Any
+import logging
 import pint
+import serial
 import time
-from functools import wraps
+import xarray as xr
 
-READ_DELAY = 0.01
+
+READ_DELAY = 0.02
 SERIAL_TIMEOUT = 0.2
-READ_TIMEOUT = 1.0
+READ_TIMEOUT = 2.0
+logger = logging.getLogger(__name__)
 
 
 def read_delay(func):
@@ -40,10 +44,11 @@ class Device(ModelDevice):
     @property
     @read_delay
     def pressure(self) -> pint.Quantity:
-        self.s.write(b"P\r\n")
-        ret = self._read()
+        ret = self._comm(b"P\r\n")
         val, unit, ag = ret[0].split()
-        return pint.Quantity(f"{val} {unit}")
+        qty = pint.Quantity(f"{val} {unit}")
+        self.last_action = time.perf_counter()
+        return qty
 
     def __init__(self, driver: ModelInterface, key: tuple[str, str], **kwargs: dict):
         address, _ = key
@@ -53,25 +58,25 @@ class Device(ModelDevice):
             bytesize=8,
             stopbits=1,
             timeout=SERIAL_TIMEOUT,
+            exclusive=True,
         )
         super().__init__(driver, key, **kwargs)
 
         self.last_action = time.perf_counter()
         self.constants = dict()
+        self.portlock = RLock()
 
-        self.s.write(b"SNR\r\n")
-        ret = self._read()
+        ret = self._comm(b"SNR\r\n")
         self.constants["serial"] = ret[0].split("=")[1].strip()
 
-        self.s.write(b"ENQ\r\n")
-        ret = self._read()
+        ret = self._comm(b"ENQ\r\n")
         minv, to, maxv, unit, ag = ret[2].split()
         self.units = unit
         self.constants["gauge"] = True if ag == "G" else False
 
     def attrs(self, **kwargs: dict) -> dict[str, Attr]:
         attrs_dict = {
-            "pressure": Attr(type=pint.Quantity, units=self.units, status=True),
+            "pressure": Attr(type=pint.Quantity, units=self.units, status=False),
         }
         return attrs_dict
 
@@ -99,15 +104,19 @@ class Device(ModelDevice):
     def set_attr(self, attr: str, val: Any, **kwargs: dict) -> Val:
         pass
 
-    def _read(self) -> list[str]:
+    def _comm(self, command: bytes) -> list[str]:
         lines = []
         t0 = time.perf_counter()
-        while time.perf_counter() - t0 < READ_TIMEOUT:
-            lines += self.s.readlines()
-            if b">" in lines:
-                break
-            time.sleep(READ_DELAY)
-        else:
-            raise RuntimeError(f"Read took too long: {lines}")
+        with self.portlock:
+            logger.debug("%s", command.rstrip())
+            self.s.write(command)
+            while time.perf_counter() - t0 < READ_TIMEOUT:
+                lines += self.s.readlines()
+                logger.debug("%s", lines)
+                if b">" in lines:
+                    break
+                time.sleep(READ_DELAY)
+            else:
+                raise RuntimeError(f"Read took too long: {lines}")
         lines = [i.decode().strip() for i in lines[:-1]]
         return lines
