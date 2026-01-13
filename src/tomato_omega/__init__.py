@@ -87,7 +87,7 @@ class Device(ModelDevice):
         minv, to, maxv, unit, ag = ret[2].split()
         self.units = unit
         self.constants["gauge"] = True if ag == "G" else False
-        self.portlock = RLock
+        self.portlock = RLock()
 
     def attrs(self, **kwargs: dict) -> dict[str, Attr]:
         attrs_dict = {
