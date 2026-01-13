@@ -1,5 +1,6 @@
 from datetime import datetime
 from functools import wraps
+from threading import RLock
 from tomato.driverinterface_2_1 import ModelInterface, ModelDevice, Attr
 from tomato.driverinterface_2_1.decorators import coerce_val
 from tomato.driverinterface_2_1.types import Val
@@ -44,11 +45,14 @@ class Device(ModelDevice):
     @property
     @read_delay
     def pressure(self) -> pint.Quantity:
+
+
         for retry in range(READ_RETRIES):
             try:
-                logger.debug("P\r\n")
-                self.s.write(b"P\r\n")
-                ret = self._read()
+                with self.portlock:
+                    logger.debug("P\r\n")
+                    self.s.write(b"P\r\n")
+                    ret = self._read()
                 val, unit, ag = ret[0].split()
                 qty = pint.Quantity(f"{val} {unit}")
                 break
@@ -67,6 +71,7 @@ class Device(ModelDevice):
             bytesize=8,
             stopbits=1,
             timeout=SERIAL_TIMEOUT,
+            exclusive=True
         )
         super().__init__(driver, key, **kwargs)
 
@@ -82,6 +87,7 @@ class Device(ModelDevice):
         minv, to, maxv, unit, ag = ret[2].split()
         self.units = unit
         self.constants["gauge"] = True if ag == "G" else False
+        self.portlock = RLock
 
     def attrs(self, **kwargs: dict) -> dict[str, Attr]:
         attrs_dict = {
