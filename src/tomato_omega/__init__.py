@@ -1,16 +1,15 @@
-from datetime import datetime
+import logging
+import time
+from datetime import UTC, datetime
 from functools import wraps
 from threading import RLock
-from tomato.driverinterface_2_1 import ModelInterface, ModelDevice, Attr
-from tomato.driverinterface_2_1.decorators import coerce_val
-from tomato.driverinterface_2_1.types import Val
 from typing import Any
-import logging
+
 import pint
 import serial
-import time
 import xarray as xr
-
+from tomato.driverinterface_3_0 import Attr, ModelComponent, ModelInterface, Status
+from tomato.driverinterface_3_0.decorators import coerce_val
 
 READ_DELAY = 0.02
 SERIAL_TIMEOUT = 0.2
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def read_delay(func):
     @wraps(func)
-    def wrapper(self: ModelDevice, **kwargs):
+    def wrapper(self: "Device", **kwargs):
         if time.perf_counter() - self.last_action < READ_DELAY:
             time.sleep(READ_DELAY)
         return func(self, **kwargs)
@@ -31,11 +30,8 @@ def read_delay(func):
 class DriverInterface(ModelInterface):
     idle_measurement_interval = 10
 
-    def DeviceFactory(self, key, **kwargs):
-        return Device(self, key, **kwargs)
 
-
-class Device(ModelDevice):
+class Device(ModelComponent):
     s: serial.Serial
     last_action: float
     constants: dict
@@ -63,7 +59,7 @@ class Device(ModelDevice):
         super().__init__(driver, key, **kwargs)
 
         self.last_action = time.perf_counter()
-        self.constants = dict()
+        self.constants = {}
         self.portlock = RLock()
 
         ret = self._comm(b"SNR\r\n")
@@ -72,11 +68,11 @@ class Device(ModelDevice):
         ret = self._comm(b"ENQ\r\n")
         minv, to, maxv, unit, ag = ret[2].split()
         self.units = unit
-        self.constants["gauge"] = True if ag == "G" else False
+        self.constants["gauge"] = ag == "G"
 
     def attrs(self, **kwargs: dict) -> dict[str, Attr]:
         attrs_dict = {
-            "pressure": Attr(type=pint.Quantity, units=self.units, status=False),
+            "pressure": Attr(type=pint.Quantity, units=self.units, status=True),
         }
         return attrs_dict
 
@@ -85,7 +81,7 @@ class Device(ModelDevice):
         return capabs
 
     def do_measure(self, **kwargs: dict) -> None:
-        coords = {"uts": (["uts"], [datetime.now().timestamp()])}
+        coords = {"uts": (["uts"], [datetime.now(UTC).timestamp()])}
         qty = self.pressure
         data_vars = {
             "pressure": (["uts"], [qty.m], {"units": str(qty.u)}),
@@ -101,8 +97,26 @@ class Device(ModelDevice):
         return getattr(self, attr)
 
     @coerce_val
-    def set_attr(self, attr: str, val: Any, **kwargs: dict) -> Val:
+    def set_attr(self, attr: str, val: Any, **kwargs: dict) -> None:
         pass
+
+    def status(self, **kwargs: dict) -> Status:
+        connected: bool = self.s.is_open()
+        if connected:
+            attrs = {attr: self.get_attr(attr) for attr in self.attrs()}
+        else:
+            attrs = {}
+
+        return Status(
+            connected=connected,
+            state=self.state,  # ty: ignore[invalid-argument-type]
+            can_submit=connected,
+            attrs=attrs,
+        )
+
+    def quit(self, **kwargs: dict) -> None:
+        logger.debug("%s: closing Socket", self.name)
+        self.s.close()
 
     def _comm(self, command: bytes) -> list[str]:
         lines = []
