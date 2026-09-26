@@ -41,7 +41,7 @@ class Device(ModelComponent):
     @read_delay
     def pressure(self) -> pint.Quantity:
         ret = self._comm(b"P\r\n")
-        val, unit, ag = ret[0].split()
+        val, unit, _ag = ret[0].split()
         qty = pint.Quantity(f"{val} {unit}")
         self.last_action = time.perf_counter()
         return qty
@@ -66,7 +66,7 @@ class Device(ModelComponent):
         self.constants["serial"] = ret[0].split("=")[1].strip()
 
         ret = self._comm(b"ENQ\r\n")
-        minv, to, maxv, unit, ag = ret[2].split()
+        _minv, _to, _maxv, unit, ag = ret[2].split()
         self.units = unit
         self.constants["gauge"] = ag == "G"
 
@@ -115,8 +115,9 @@ class Device(ModelComponent):
         )
 
     def quit(self, **kwargs: dict) -> None:
-        logger.debug("%s: closing Socket", self.name)
-        self.s.close()
+        if self.s.is_open():
+            logger.debug("%s: closing Socket", self.name)
+            self.s.close()
 
     def _comm(self, command: bytes) -> list[str]:
         lines = []
@@ -124,6 +125,7 @@ class Device(ModelComponent):
         with self.portlock:
             logger.debug("%s", command.rstrip())
             self.s.write(command)
+            # TODO: rewrite using read_until(sequence=b">")
             while time.perf_counter() - t0 < READ_TIMEOUT:
                 lines += self.s.readlines()
                 logger.debug("%s", lines)
