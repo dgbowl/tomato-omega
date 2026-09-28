@@ -101,7 +101,7 @@ class Component(ModelComponent):
         pass
 
     def status(self, **kwargs: dict) -> Status:
-        connected: bool = self.s.is_open()
+        connected: bool = self.s.is_open
         if connected:
             attrs = {attr: self.get_attr(attr) for attr in self.attrs()}
         else:
@@ -115,7 +115,7 @@ class Component(ModelComponent):
         )
 
     def quit(self, **kwargs: dict) -> None:
-        if self.s.is_open():
+        if self.s.is_open:
             logger.debug("%s: closing Socket", self.name)
             self.s.close()
 
