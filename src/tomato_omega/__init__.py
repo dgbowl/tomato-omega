@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def read_delay(func):
     @wraps(func)
-    def wrapper(self: "Device", **kwargs):
+    def wrapper(self: "Component", **kwargs):
         if time.perf_counter() - self.last_action < READ_DELAY:
             time.sleep(READ_DELAY)
         return func(self, **kwargs)
@@ -31,7 +31,7 @@ class DriverInterface(ModelInterface):
     idle_measurement_interval = 10
 
 
-class Device(ModelComponent):
+class Component(ModelComponent):
     s: serial.Serial
     last_action: float
     constants: dict
