@@ -46,8 +46,9 @@ class Component(ModelComponent):
         self.last_action = time.perf_counter()
         return qty
 
-    def __init__(self, driver: ModelInterface, key: tuple[str, str], **kwargs: dict):
-        address, _ = key
+    def __init__(self, driver: ModelInterface, name: str, address: str, **kwargs: dict):
+        super().__init__(driver, name, **kwargs)
+
         self.s = serial.Serial(
             port=address,
             baudrate=115200,
@@ -56,7 +57,6 @@ class Component(ModelComponent):
             timeout=SERIAL_TIMEOUT,
             exclusive=True,
         )
-        super().__init__(driver, key, **kwargs)
 
         self.last_action = time.perf_counter()
         self.constants = {}
