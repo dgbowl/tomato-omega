@@ -112,6 +112,7 @@ class Component(ModelComponent):
             state=self.state,  # ty: ignore[invalid-argument-type]
             can_submit=connected,
             attrs=attrs,
+            task=self.running_task,
         )
 
     def quit(self, **kwargs: dict) -> None:
