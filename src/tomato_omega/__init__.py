@@ -8,7 +8,13 @@ from typing import Any
 import pint
 import serial
 import xarray as xr
-from tomato.driverinterface_3_0 import Attr, ModelComponent, ModelInterface, Status
+from tomato.driverinterface_3_0 import (
+    Attr,
+    ModelComponent,
+    ModelInterface,
+    Settings,
+    Status,
+)
 from tomato.driverinterface_3_0.decorators import coerce_val
 
 READ_DELAY = 0.02
@@ -27,8 +33,12 @@ def read_delay(func):
     return wrapper
 
 
+class Settings(Settings):
+    idle_measurement_interval: int = 10
+
+
 class DriverInterface(ModelInterface):
-    idle_measurement_interval = 10
+    pass
 
 
 class Component(ModelComponent):

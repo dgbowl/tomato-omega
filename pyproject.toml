@@ -13,7 +13,7 @@ description = "This package is a part of tomato. It has been made for the automa
 readme = "README.md"
 requires-python = ">= 3.11"
 dependencies = [
-    "tomato >= 3.0rc2",
+    "tomato > 3.0rc4.post0",
     "pyserial >= 3.5",
 ]
 classifiers = [
