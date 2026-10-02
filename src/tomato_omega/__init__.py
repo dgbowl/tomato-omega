@@ -1,16 +1,21 @@
-from datetime import datetime
+import logging
+import time
+from datetime import UTC, datetime
 from functools import wraps
 from threading import RLock
-from tomato.driverinterface_2_1 import ModelInterface, ModelDevice, Attr
-from tomato.driverinterface_2_1.decorators import coerce_val
-from tomato.driverinterface_2_1.types import Val
 from typing import Any
-import logging
+
 import pint
 import serial
-import time
 import xarray as xr
-
+from tomato.driverinterface_3_0 import (
+    Attr,
+    ModelComponent,
+    ModelInterface,
+    Settings,
+    Status,
+)
+from tomato.driverinterface_3_0.decorators import coerce_val
 
 READ_DELAY = 0.02
 SERIAL_TIMEOUT = 0.2
@@ -20,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def read_delay(func):
     @wraps(func)
-    def wrapper(self: ModelDevice, **kwargs):
+    def wrapper(self: "Component", **kwargs):
         if time.perf_counter() - self.last_action < READ_DELAY:
             time.sleep(READ_DELAY)
         return func(self, **kwargs)
@@ -28,14 +33,15 @@ def read_delay(func):
     return wrapper
 
 
+class Settings(Settings):
+    idle_measurement_interval: int = 10
+
+
 class DriverInterface(ModelInterface):
-    idle_measurement_interval = 10
-
-    def DeviceFactory(self, key, **kwargs):
-        return Device(self, key, **kwargs)
+    pass
 
 
-class Device(ModelDevice):
+class Component(ModelComponent):
     s: serial.Serial
     last_action: float
     constants: dict
@@ -45,13 +51,14 @@ class Device(ModelDevice):
     @read_delay
     def pressure(self) -> pint.Quantity:
         ret = self._comm(b"P\r\n")
-        val, unit, ag = ret[0].split()
+        val, unit, _ag = ret[0].split()
         qty = pint.Quantity(f"{val} {unit}")
         self.last_action = time.perf_counter()
         return qty
 
-    def __init__(self, driver: ModelInterface, key: tuple[str, str], **kwargs: dict):
-        address, _ = key
+    def __init__(self, driver: ModelInterface, name: str, address: str, **kwargs: dict):
+        super().__init__(driver, name, **kwargs)
+
         self.s = serial.Serial(
             port=address,
             baudrate=115200,
@@ -60,23 +67,22 @@ class Device(ModelDevice):
             timeout=SERIAL_TIMEOUT,
             exclusive=True,
         )
-        super().__init__(driver, key, **kwargs)
 
         self.last_action = time.perf_counter()
-        self.constants = dict()
+        self.constants = {}
         self.portlock = RLock()
 
         ret = self._comm(b"SNR\r\n")
         self.constants["serial"] = ret[0].split("=")[1].strip()
 
         ret = self._comm(b"ENQ\r\n")
-        minv, to, maxv, unit, ag = ret[2].split()
+        _minv, _to, _maxv, unit, ag = ret[2].split()
         self.units = unit
-        self.constants["gauge"] = True if ag == "G" else False
+        self.constants["gauge"] = ag == "G"
 
     def attrs(self, **kwargs: dict) -> dict[str, Attr]:
         attrs_dict = {
-            "pressure": Attr(type=pint.Quantity, units=self.units, status=False),
+            "pressure": Attr(type=pint.Quantity, units=self.units, status=True),
         }
         return attrs_dict
 
@@ -85,7 +91,7 @@ class Device(ModelDevice):
         return capabs
 
     def do_measure(self, **kwargs: dict) -> None:
-        coords = {"uts": (["uts"], [datetime.now().timestamp()])}
+        coords = {"uts": (["uts"], [datetime.now(UTC).timestamp()])}
         qty = self.pressure
         data_vars = {
             "pressure": (["uts"], [qty.m], {"units": str(qty.u)}),
@@ -101,8 +107,28 @@ class Device(ModelDevice):
         return getattr(self, attr)
 
     @coerce_val
-    def set_attr(self, attr: str, val: Any, **kwargs: dict) -> Val:
+    def set_attr(self, attr: str, val: Any, **kwargs: dict) -> None:
         pass
+
+    def status(self, **kwargs: dict) -> Status:
+        connected: bool = self.s.is_open
+        if connected:
+            attrs = {attr: self.get_attr(attr) for attr in self.attrs()}
+        else:
+            attrs = {}
+
+        return Status(
+            connected=connected,
+            state=self.state,  # ty: ignore[invalid-argument-type]
+            can_submit=connected,
+            attrs=attrs,
+            task=self.running_task,
+        )
+
+    def quit(self, **kwargs: dict) -> None:
+        if self.s.is_open:
+            logger.debug("%s: closing Socket", self.name)
+            self.s.close()
 
     def _comm(self, command: bytes) -> list[str]:
         lines = []
@@ -110,6 +136,7 @@ class Device(ModelDevice):
         with self.portlock:
             logger.debug("%s", command.rstrip())
             self.s.write(command)
+            # TODO: rewrite using read_until(sequence=b">")
             while time.perf_counter() - t0 < READ_TIMEOUT:
                 lines += self.s.readlines()
                 logger.debug("%s", lines)
