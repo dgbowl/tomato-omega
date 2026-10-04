@@ -114,15 +114,19 @@ class Component(ModelComponent):
         connected: bool = self.s.is_open
         if connected:
             attrs = {attr: self.get_attr(attr) for attr in self.attrs()}
+            state = self.state
+            task = self.running_task
         else:
             attrs = {}
+            state = None
+            task = None
 
         return Status(
             connected=connected,
-            state=self.state,  # ty: ignore[invalid-argument-type]
+            state=state,  # ty: ignore[invalid-argument-type]
             can_submit=connected,
             attrs=attrs,
-            task=self.running_task,
+            task=task,
         )
 
     def quit(self, **kwargs: dict) -> None:
