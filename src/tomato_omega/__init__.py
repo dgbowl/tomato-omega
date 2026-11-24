@@ -66,6 +66,7 @@ class Component(ModelComponent):
             stopbits=1,
             timeout=SERIAL_TIMEOUT,
             exclusive=True,
+            write_timeout=2,
         )
 
         self.last_action = time.perf_counter()
@@ -135,9 +136,36 @@ class Component(ModelComponent):
             self.s.close()
 
     def _comm(self, command: bytes) -> list[str]:
-        lines = []
-        t0 = time.perf_counter()
+        last = None
+        for attempt in range(1, 4):
+            try:
+                return self._comm_once(command)
+            except (serial.SerialException, RuntimeError, OSError) as e:
+                last = e
+                self._reopen_port()
+        raise last
+
+    def _reopen_port(self) -> None:
         with self.portlock:
+            try:
+                self.s.close()
+            except Exception:
+                pass
+            time.sleep(2.0)
+            try:
+                self.s.open()
+            except Exception:
+                pass
+            self._omega_ready = False
+
+    def _comm_once(self, command: bytes) -> list[str]:
+        lines = []
+        with self.portlock:
+            if not getattr(self, "_omega_ready", False):
+                time.sleep(0.5)
+                self._omega_ready = True
+            self.s.reset_input_buffer()
+            t0 = time.perf_counter()
             logger.debug("%s", command.rstrip())
             self.s.write(command)
             # TODO: rewrite using read_until(sequence=b">")
