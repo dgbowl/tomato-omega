@@ -28,13 +28,15 @@ def read_delay(func):
     def wrapper(self: "Component", **kwargs):
         if time.perf_counter() - self.last_action < READ_DELAY:
             time.sleep(READ_DELAY)
-        return func(self, **kwargs)
+        ret = func(self, **kwargs)
+        self.last_action = time.perf_counter()
+        return ret
 
     return wrapper
 
 
 class Settings(Settings):
-    idle_measurement_interval: int = 10
+    idle_measurement_interval: int | None = 10
 
 
 class DriverInterface(ModelInterface):
@@ -46,15 +48,7 @@ class Component(ModelComponent):
     last_action: float
     constants: dict
     units: str
-
-    @property
-    @read_delay
-    def pressure(self) -> pint.Quantity:
-        ret = self._comm(b"P\r\n")
-        val, unit, _ag = ret[0].split()
-        qty = pint.Quantity(f"{val} {unit}")
-        self.last_action = time.perf_counter()
-        return qty
+    pressure: pint.Quantity
 
     def __init__(self, driver: ModelInterface, name: str, address: str, **kwargs: dict):
         super().__init__(driver, name, **kwargs)
@@ -79,6 +73,7 @@ class Component(ModelComponent):
         _minv, _to, _maxv, unit, ag = ret[2].split()
         self.units = unit
         self.constants["gauge"] = ag == "G"
+        self.task_list.put("measure")
 
     def attrs(self, **kwargs: dict) -> dict[str, Attr]:
         attrs_dict = {
@@ -92,9 +87,11 @@ class Component(ModelComponent):
 
     def do_measure(self, **kwargs: dict) -> None:
         coords = {"uts": (["uts"], [datetime.now(UTC).timestamp()])}
-        qty = self.pressure
+        ret = self._comm(b"P\r\n")
+        val, unit, _ag = ret[0].split()
+        self.pressure = pint.Quantity(f"{val} {unit}")
         data_vars = {
-            "pressure": (["uts"], [qty.m], {"units": str(qty.u)}),
+            "pressure": (["uts"], [float(val)], {"units": unit}),
         }
         self.last_data = xr.Dataset(
             data_vars=data_vars,
@@ -134,6 +131,7 @@ class Component(ModelComponent):
             logger.debug("%s: closing Socket", self.name)
             self.s.close()
 
+    @read_delay
     def _comm(self, command: bytes) -> list[str]:
         lines = []
         t0 = time.perf_counter()
